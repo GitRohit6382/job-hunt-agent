@@ -8,17 +8,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
-from langchain.chains import RetrievalQA
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
+from langchain_core.prompts import ChatPromptTemplate
 
-# 1. Initialize & Secure Environment
 load_dotenv()
-# Ensure API keys are loaded from system environment (works for local .env or Streamlit Secrets)
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY", "")
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY", "")
 
 class CareerAgent:
     def __init__(self):
-        # 2. Setup LLM & Embeddings (As per project session guidelines)
         self.llm = ChatGroq(model_name="llama3-70b-8192", temperature=0.3)
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         self.vector_db = None
@@ -29,8 +28,12 @@ class CareerAgent:
         url = "https://jsearch.p.rapidapi.com/search"
         querystring = {"query": f"{title} in {location}", "page": "1", "num_pages": "1"}
         headers = {"x-rapidapi-key": rapid_key, "x-rapidapi-host": "jsearch.p.rapidapi.com"}
-        response = requests.get(url, headers=headers, params=querystring)
-        return response.json().get("data", [])
+        try:
+            response = requests.get(url, headers=headers, params=querystring)
+            return response.json().get("data", [])
+        except Exception as e:
+            st.error(f"Error fetching jobs: {e}")
+            return []
 
     def setup_rag(self, pdf_path):
         """Tool 2: RAG Pipeline (Document Ingestion)"""
@@ -39,21 +42,39 @@ class CareerAgent:
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
         splits = splitter.split_documents(docs)
         
-        # Store in Vector DB (Chroma)
         self.vector_db = Chroma.from_documents(documents=splits, embedding=self.embeddings)
         self.retriever = self.vector_db.as_retriever(search_kwargs={"k": 2})
         return "Knowledge base initialized successfully."
 
     def ask_agent(self, query):
-        """Tool 3: RAG Retrieval"""
+        """Tool 3: Modern RAG Retrieval Chain"""
         if not self.retriever:
             return "Please upload a document to analyze first."
-        qa_chain = RetrievalQA.from_chain_type(llm=self.llm, chain_type="stuff", retriever=self.retriever)
-        return qa_chain.invoke(query)
+        
+        system_prompt = (
+            "You are an expert career assistant. Use the following pieces of retrieved "
+            "context from the user's document to answer the question.\n\n"
+            "{context}"
+        )
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{input}"),
+        ])
+        
+        question_answer_chain = create_stuff_documents_chain(self.llm, prompt)
+        rag_chain = create_retrieval_chain(self.retriever, question_answer_chain)
+        
+        response = rag_chain.invoke({"input": query})
+        return response.get("answer", "No answer generated.")
 
-# --- Streamlit UI ---
+
 st.set_page_config(page_title="Pro Career Agent", layout="wide")
-agent = CareerAgent()
+
+
+if "agent" not in st.session_state:
+    st.session_state.agent = CareerAgent()
+
+agent = st.session_state.agent
 
 st.title("🚀 Career AI Agent (Production Build)")
 tab1, tab2 = st.tabs(["Job Discovery", "Resume/Doc Optimizer"])
@@ -64,20 +85,32 @@ with tab1:
     t = st.text_input("Job Title", "Software Engineer")
     l = st.text_input("Location", "Bangalore")
     if st.button("Search Jobs"):
-        results = agent.search_jobs(t, l, key)
-        for job in results:
-            st.write(f"### {job.get('job_title')} | {job.get('employer_name')}")
-            st.link_button("Apply", job.get('job_apply_link', '#'))
+        if not key:
+            st.warning("Please provide a RapidAPI key.")
+        else:
+            results = agent.search_jobs(t, l, key)
+            if not results:
+                st.info("No jobs found or invalid API key.")
+            for job in results:
+                st.write(f"### {job.get('job_title')} | {job.get('employer_name')}")
+                st.link_button("Apply", job.get('job_apply_link', '#'))
 
 with tab2:
     st.subheader("Resume/Job Description Analysis")
     uploaded = st.file_uploader("Upload PDF", type="pdf")
     if uploaded:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded.read())
-            agent.setup_rag(tmp.name)
-            st.success("Document Ingested into Knowledge Base")
-            q = st.text_input("Ask a question about your doc (e.g., 'Does my resume fit this role?')")
-            if st.button("Analyze"):
-                ans = agent.ask_agent(q)
-                st.write(ans['result'])
+            tmp_path = tmp.name
+        
+        agent.setup_rag(tmp_path)
+        os.remove(tmp_path)  # Clean up temp file after loading
+        st.success("Document Ingested into Knowledge Base")
+
+    q = st.text_input("Ask a question about your doc (e.g., 'Does my resume fit this role?')")
+    if st.button("Analyze"):
+        if q:
+            ans = agent.ask_agent(q)
+            st.write(ans)
+        else:
+            st.warning("Please enter a question.")
