@@ -46,10 +46,19 @@ class CareerAgent:
         """Tool 1: Real-time Job Search"""
         url = "https://jsearch.p.rapidapi.com/search"
         querystring = {"query": f"{title} in {location}", "page": "1", "num_pages": "1"}
-        headers = {"x-rapidapi-key": rapid_key, "x-rapidapi-host": "jsearch.p.rapidapi.com"}
+        headers = {
+            "x-rapidapi-key": rapid_key.strip(),
+            "x-rapidapi-host": "jsearch.p.rapidapi.com"
+        }
         try:
             response = requests.get(url, headers=headers, params=querystring)
-            return response.json().get("data", [])
+            data = response.json()
+            if "data" in data:
+                return data["data"]
+            elif "message" in data:
+                st.error(f"RapidAPI Notice: {data['message']}")
+                return []
+            return []
         except Exception as e:
             st.error(f"Error fetching jobs: {e}")
             return []
