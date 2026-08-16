@@ -1,3 +1,14 @@
+# Secret files
 .env
+
+# Python specific
 __pycache__/
+*.pyc
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# OS/System files
 .DS_Store
