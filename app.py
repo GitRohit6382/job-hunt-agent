@@ -15,15 +15,12 @@ from langchain_core.prompts import ChatPromptTemplate
 # 1. Initialize & Secure Environment
 load_dotenv()
 
-def get_secret(key):
-    """Retrieve secret from Streamlit Secrets or Environment variables."""
-    try:
-        return st.secrets.get(key) or os.getenv(key)
-    except Exception:
-        return os.getenv(key)
+# Read from st.secrets on Cloud, fallback to .env locally
+google_api_key = st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+groq_api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
-google_api_key = get_secret("GOOGLE_API_KEY")
-groq_api_key = get_secret("GROQ_API_KEY")
+os.environ["GOOGLE_API_KEY"] = google_api_key or ""
+os.environ["GROQ_API_KEY"] = groq_api_key or ""
 
 class CareerAgent:
     def __init__(self, g_key=None, gr_key=None):
