@@ -12,14 +12,26 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 
+# 1. Initialize & Secure Environment
 load_dotenv()
-os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY", "")
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY", "")
 
+# Read from st.secrets if available (Streamlit Cloud), fallback to os.getenv (Local .env)
+google_api_key = st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+groq_api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+
+os.environ["GOOGLE_API_KEY"] = google_api_key or ""
+os.environ["GROQ_API_KEY"] = groq_api_key or ""
 class CareerAgent:
     def __init__(self):
-        self.llm = ChatGroq(model_name="llama3-70b-8192", temperature=0.3)
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        self.llm = ChatGroq(
+            groq_api_key=groq_api_key,
+            model_name="llama3-70b-8192", 
+            temperature=0.3
+        )
+        self.embeddings = GoogleGenerativeAIEmbeddings(
+            google_api_key=google_api_key,
+            model="models/embedding-001"
+        )
         self.vector_db = None
         self.retriever = None
 
