@@ -54,29 +54,42 @@ class CareerAgent:
 
     def search_jobs(self, title, location, rapid_key):
         """Tool 1: Real-time Job Search via JSearch API"""
-        if not rapid_key:
-            st.warning("⚠️ Please provide a valid RapidAPI Key.")
+        clean_key = str(rapid_key).strip().strip("'").strip('"')
+        if not clean_key:
+            st.warning("⚠️ RapidAPI Key is empty.")
             return []
 
         url = "https://jsearch.p.rapidapi.com/search"
-        querystring = {"query": f"{title} in {location}", "page": "1", "num_pages": "1"}
+        querystring = {
+            "query": f"{title} in {location}",
+            "page": "1",
+            "num_pages": "1"
+        }
         headers = {
-            "x-rapidapi-key": rapid_key.strip(),
+            "x-rapidapi-key": clean_key,
             "x-rapidapi-host": "jsearch.p.rapidapi.com"
         }
         
         try:
-            response = requests.get(url, headers=headers, params=querystring, timeout=10)
-            data = response.json()
+            response = requests.get(url, headers=headers, params=querystring, timeout=15)
+            res_json = response.json()
 
             if response.status_code != 200:
-                error_msg = data.get("message", "API request failed.")
-                st.error(f"RapidAPI Error ({response.status_code}): {error_msg}")
+                st.error(f"RapidAPI Error ({response.status_code}): {res_json.get('message', response.text)}")
                 return []
 
-            return data.get("data", [])
+            # Handle both possible response formats:
+            # 1. {"data": {"jobs": [...]}}
+            # 2. {"data": [...]}
+            data_content = res_json.get("data", [])
+            if isinstance(data_content, dict):
+                return data_content.get("jobs", [])
+            elif isinstance(data_content, list):
+                return data_content
+
+            return []
         except Exception as e:
-            st.error(f"Error fetching jobs: {e}")
+            st.error(f"Network error: {e}")
             return []
 
     def setup_rag(self, pdf_path):
